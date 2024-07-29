@@ -160,6 +160,22 @@ async def check_domains(domains):
     tasks = [check_domain(domain, resolver) for domain in domains]
     return await asyncio.gather(*tasks)
 
+async def get_original_domain_content(domain):
+    url = f"https://{domain}"
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.get(url, timeout=10) as response:
+                if response.status == 200:
+                    return await response.text()
+        except:
+            return ""
+    return ""
+
+def extract_keywords(content):
+    # This is a simple keyword extraction. You might want to use a more sophisticated method.
+    words = content.lower().split()
+    return list(set([word for word in words if len(word) > 3]))
+
 async def analyze_domain(domain, original_domain):
     url = f"https://{domain}"
     async with aiohttp.ClientSession() as session:
@@ -170,8 +186,9 @@ async def analyze_domain(domain, original_domain):
                     soup = BeautifulSoup(content, 'html.parser')
                     
                     # DOM Content Analysis
-                    olympic_keywords = ['olympic', 'olympics', 'medal', 'athlete', 'sport']
-                    keyword_count = sum(1 for keyword in olympic_keywords if keyword in content.lower())
+                    original_domain_content = await get_original_domain_content(original_domain)
+                    original_keywords = extract_keywords(original_domain_content)
+                    keyword_count = sum(1 for keyword in original_keywords if keyword in content.lower())
                     
                     # SSL Certificate Analysis
                     ssl_info = ssl.create_default_context().wrap_socket(socket.create_connection((domain, 443)), server_hostname=domain)
@@ -188,7 +205,7 @@ async def analyze_domain(domain, original_domain):
                     
                     # URL Structure Analysis
                     extracted = tldextract.extract(domain)
-                    suspicious_words = ['official', 'tickets', 'store', 'shop', 'olympics', 'medal', 'athlete', 'sport', 'games', '2024', '2026', '2028', '2030', '2032']
+                    suspicious_words = ['official', 'login', 'account', 'secure', 'verify', 'update']
                     contains_suspicious_word = any(word in extracted.domain for word in suspicious_words)
                     
                     # Redirect Analysis
@@ -198,9 +215,9 @@ async def analyze_domain(domain, original_domain):
                     suspicion_score = 0
                     reasons = []
                     
-                    if keyword_count > 5:
+                    if keyword_count > len(original_keywords) // 2:
                         suspicion_score += 1
-                        reasons.append("High number of Olympic-related keywords")
+                        reasons.append("High number of original domain keywords")
                     
                     if days_until_expiry < 30:
                         suspicion_score += 1
@@ -223,7 +240,8 @@ async def analyze_domain(domain, original_domain):
                         'domain': domain,
                         'suspicion_score': suspicion_score,
                         'reasons': reasons,
-                        'is_suspicious': suspicion_score > 2                    }
+                        'is_suspicious': suspicion_score > 2
+                    }
                 else:
                     return {
                         'domain': domain,
@@ -242,7 +260,6 @@ async def analyze_domain(domain, original_domain):
                 'error': f"Unexpected error: {str(e)}",
                 'is_suspicious': False
             }
-    
 
 def read_domain_file(file_path):
     with open(file_path, 'r') as file:
@@ -309,7 +326,7 @@ async def main(domains):
         }
         domain_summaries.append(domain_summary)
 
-    # print overall
+    # print overall summary
     print(f"\n{INFO} Overall Summary of Typosquatted domains:")
     for summary in domain_summaries:
         print(f"{BOLD}{summary['domain']}{ENDC}: "
