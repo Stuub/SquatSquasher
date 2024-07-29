@@ -24,7 +24,7 @@ A tool for detecting potential typosquatting domains targeting specified website
 
 Run the script with either individual domains or a file containing a list of domains:
 
-`python3 squatshuasher.py -d domain1.com domain2.com` 
+`python3 squatsquasher.py -d domain1.com domain2.com` 
 
 `python3 squatsquasher.py -f domainList.txt`
 
