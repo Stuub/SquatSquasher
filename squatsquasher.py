@@ -12,8 +12,8 @@ import cachetools
 import socket
 import time
 from collections import Counter
-import os
 import argparse
+from tld.exceptions import TldDomainNotFound
 
 
 RED = '\033[31m'
@@ -115,8 +115,20 @@ async def check_domain(domain, resolver):
     return result
 
 def generate_typos(domain):
-    tld = get_tld(f"http://{domain}", as_object=True)
-    name = domain[:-(len(tld.tld) + 1)]  # remove TLD and dot
+    try:
+        tld = get_tld(f"http://{domain}", as_object=True)
+        name = domain[:-(len(tld.tld) + 1)]  # remove TLD and dot
+    except TldDomainNotFound:
+        # If TLD is not recognized, assume the last part is the TLD
+        parts = domain.split('.')
+        if len(parts) > 1:
+            name = '.'.join(parts[:-1])
+            tld = parts[-1]
+        else:
+            # If there's no dot, treat the whole string as the name
+            name = domain
+            tld = ''
+    
     typos = []
     
     # Common typos
@@ -153,7 +165,11 @@ def generate_typos(domain):
         if c.lower() in alternatives:
             typos.append(name[:i] + alternatives[c.lower()] + name[i+1:])
     
-    return [f"{typo}.{tld}" for typo in set(typos)]
+    # Add the TLD back to the typos
+    if tld:
+        return [f"{typo}.{tld}" for typo in set(typos)]
+    else:
+        return list(set(typos))
 
 async def check_domains(domains):
     resolver = aiodns.DNSResolver()
@@ -175,7 +191,41 @@ def extract_keywords(content):
     words = content.lower().split()
     return list(set([word for word in words if len(word) > 3]))
 
+def generate_suspicious_words(domain):
+    words = domain.split('.')
+    base_domain = words[0]
+    
+    suspicious_words = [
+        base_domain,
+        f"{base_domain}official",
+        f"official{base_domain}",
+        f"{base_domain}login",
+        f"login{base_domain}",
+        f"{base_domain}account",
+        f"account{base_domain}",
+        f"{base_domain}secure",
+        f"secure{base_domain}",
+        f"{base_domain}verify",
+        f"verify{base_domain}",
+        f"{base_domain}update",
+        f"update{base_domain}",
+        f"{base_domain}support",
+        f"support{base_domain}",
+        f"{base_domain}help",
+        f"help{base_domain}",
+    ]
+    
+    return suspicious_words
+
 async def analyze_domain(domain, original_domain):
+    if domain == original_domain:
+        return {
+            'domain': domain,
+            'suspicion_score': 0,
+            'reasons': [],
+            'is_suspicious': False
+        }
+
     url = f"https://{domain}"
     async with aiohttp.ClientSession() as session:
         try:
@@ -184,30 +234,25 @@ async def analyze_domain(domain, original_domain):
                     content = await response.text()
                     soup = BeautifulSoup(content, 'html.parser')
                     
-                    # DOM Content Analysis
                     original_domain_content = await get_original_domain_content(original_domain)
                     original_keywords = extract_keywords(original_domain_content)
                     keyword_count = sum(1 for keyword in original_keywords if keyword in content.lower())
                     
-                    # SSL Certificate Analysis
                     ssl_info = ssl.create_default_context().wrap_socket(socket.create_connection((domain, 443)), server_hostname=domain)
                     cert = ssl_info.getpeercert()
                     cert_expiry = datetime.strptime(cert['notAfter'], '%b %d %H:%M:%S %Y %Z')
                     days_until_expiry = (cert_expiry - datetime.now()).days
                     
-                    # WHOIS Data Analysis
                     domain_info = whois.whois(domain)
                     creation_date = domain_info.creation_date
                     if isinstance(creation_date, list):
                         creation_date = creation_date[0]
                     days_since_creation = (datetime.now() - creation_date).days
                     
-                    # URL Structure Analysis
                     extracted = tldextract.extract(domain)
-                    suspicious_words = ['official', 'login', 'account', 'secure', 'verify', 'update']
+                    suspicious_words = generate_suspicious_words(original_domain)
                     contains_suspicious_word = any(word in extracted.domain for word in suspicious_words)
                     
-                    # Redirect Analysis
                     final_url = str(response.url)
                     is_redirect = final_url != url
                     
@@ -234,7 +279,6 @@ async def analyze_domain(domain, original_domain):
                         suspicion_score += 1
                         reasons.append(f"Redirects to {final_url}")
                     
-
                     return {
                         'domain': domain,
                         'suspicion_score': suspicion_score,
@@ -259,7 +303,7 @@ async def analyze_domain(domain, original_domain):
                 'error': f"Unexpected error: {str(e)}",
                 'is_suspicious': False
             }
-
+        
 def read_domain_file(file_path):
     with open(file_path, 'r') as file:
         return [line.strip() for line in file if line.strip()]
@@ -270,7 +314,11 @@ async def main(domains):
 
     for original_domain in domains:
         print(f"\n{INFO} Checking typosquats for: {BLUE}{original_domain}{ENDC}")
-        typosquatted_domains = generate_typos(original_domain)
+        try:
+            typosquatted_domains = generate_typos(original_domain)
+        except Exception as e:
+            print(f"{ERROR} Error generating typosquats for {original_domain}: {str(e)}")
+            continue
         
         results = await check_domains(typosquatted_domains)
         
