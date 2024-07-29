@@ -172,7 +172,6 @@ async def get_original_domain_content(domain):
     return ""
 
 def extract_keywords(content):
-    # This is a simple keyword extraction. You might want to use a more sophisticated method.
     words = content.lower().split()
     return list(set([word for word in words if len(word) > 3]))
 
