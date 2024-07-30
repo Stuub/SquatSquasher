@@ -16,8 +16,7 @@ A tool for detecting potential typosquatting domains targeting specified website
 
 ## Installation
 
-1. Clone the repository & Navigate to directory: `git clone https://github.com/Stuub/SquatSquasher && cd SquatSquasher`
-1. Clone the repository: `git clone https://github.com/Stuub/SquatSquasher`
+1. Clone the repository & Navigate to directory: `git clone https://github.com/Stuub/SquatSquasher && cd SquatSquasher
 2. Install Dependencies `pip install -r requirements.txt`
 
 ## Usage
